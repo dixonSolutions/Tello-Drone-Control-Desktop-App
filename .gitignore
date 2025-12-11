@@ -1,0 +1,64 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Node modules
+node_modules/
+
+# Build outputs
+dist/
+dist-ssr/
+build/
+*.egg-info/
+
+# Tauri
+**/src-tauri/target/
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+*.tmp
+temp/
+tmp/
+
+# Face training images (too large for git)
+**/face_training/*/images/*.jpeg
+**/face_training/*/images/*.jpg
+**/face_training/*/images/*.png
+
+# Keep model files but ignore large training datasets
+!**/face_training/models/
+
+# Testing
+coverage/
+.pytest_cache/
+

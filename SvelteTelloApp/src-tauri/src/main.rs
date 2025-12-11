@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::net::UdpSocket;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 use tauri::{State, Manager};
 
 // Drone state structures
@@ -308,8 +308,69 @@ async fn get_telemetry(state: State<'_, AppState>) -> Result<TelemetryData, Stri
 }
 
 #[tauri::command]
-async fn start_video_stream(state: State<'_, AppState>) -> Result<CommandResult, String> {
-    send_command(state.clone(), "streamon".to_string()).await
+async fn start_video_stream(state: State<'_, AppState>, app_handle: tauri::AppHandle) -> Result<CommandResult, String> {
+    // Send streamon command
+    let result = send_command(state.clone(), "streamon".to_string()).await?;
+    
+    if result.success {
+        // Start video receiver thread
+        start_video_receiver(app_handle);
+    }
+    
+    Ok(result)
+}
+
+fn start_video_receiver(app_handle: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        println!("[VideoReceiver] Starting video receiver on port 11111...");
+        
+        // Try to bind with SO_REUSEADDR
+        match UdpSocket::bind("0.0.0.0:11111") {
+            Ok(socket) => {
+                // Set non-blocking with reasonable timeout
+                socket.set_read_timeout(Some(Duration::from_millis(100))).ok();
+                let mut buf = vec![0u8; 4096]; // Larger buffer for video packets
+                let mut frame_count = 0;
+                
+                println!("[VideoReceiver] ✅ Video receiver started successfully on 0.0.0.0:11111");
+                
+                loop {
+                    match socket.recv(&mut buf) {
+                        Ok(size) => {
+                            frame_count += 1;
+                            
+                            if frame_count % 30 == 0 {
+                                println!("[VideoReceiver] Received {} video packets (latest: {} bytes)", frame_count, size);
+                            }
+                            
+                            // Encode packet to base64 and emit to frontend
+                            use base64::{Engine as _, engine::general_purpose};
+                            let encoded = general_purpose::STANDARD.encode(&buf[..size]);
+                            
+                            if let Err(e) = app_handle.emit_all("video-packet", encoded) {
+                                eprintln!("[VideoReceiver] Failed to emit packet: {}", e);
+                            }
+                        }
+                        Err(e) => {
+                            if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut {
+                                // Normal timeout, continue
+                                continue;
+                            } else {
+                                eprintln!("[VideoReceiver] Error receiving video: {}", e);
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                println!("[VideoReceiver] Video receiver stopped");
+            }
+            Err(e) => {
+                eprintln!("[VideoReceiver] ❌ Failed to bind video socket on port 11111: {}", e);
+                eprintln!("[VideoReceiver] Port may be in use. Try closing other Tello apps.");
+            }
+        }
+    });
 }
 
 #[tauri::command]

@@ -1,162 +1,246 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { droneStore } from '$lib/stores/drone';
-  import { recognitionStore } from '$lib/stores/recognition';
-  import Card from './ui/card/Card.svelte';
-  import CardHeader from './ui/card/CardHeader.svelte';
-  import CardTitle from './ui/card/CardTitle.svelte';
-  import CardContent from './ui/card/CardContent.svelte';
+  import { galleryStore } from '$lib/stores/gallery';
   import Button from './ui/button/Button.svelte';
-  import { Play, Square, Camera, VideoIcon } from 'lucide-svelte';
+  import { Camera, Video, VideoOff } from 'lucide-svelte';
   import { invoke } from '@tauri-apps/api/tauri';
+  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { toast } from 'svelte-sonner';
   
   let streaming = false;
   let canvas: HTMLCanvasElement;
-  let ctx: CanvasRenderingContext2D | null;
-  let streamInterval: number;
+  let frameCount = 0;
+  let unlistenVideo: UnlistenFn | null = null;
+  let packetsPerSecond = 0;
+  let lastSecond = 0;
+  let decoder: any = null;
   
-  onMount(() => {
+  onMount(async () => {
+    console.log('[VideoFeed] Component mounted');
+    
     if (canvas) {
-      ctx = canvas.getContext('2d');
+      // Initialize Broadway H.264 decoder
+      try {
+        const { default: Player } = await import('broadway-player');
+        
+        decoder = new Player({
+          useWorker: true,
+          webgl: 'auto',
+          size: {
+            width: 960,
+            height: 720
+          },
+          canvas: canvas
+        });
+        
+        console.log('[VideoFeed] ✅ Broadway H.264 decoder initialized');
+      } catch (error) {
+        console.error('[VideoFeed] Failed to initialize decoder:', error);
+        toast.error('Video decoder initialization failed');
+      }
     }
+    
+    // Listen for video packets from Rust backend
+    unlistenVideo = await listen('video-packet', (event) => {
+      if (!streaming || !decoder) return;
+      
+      try {
+        // Decode base64
+        const base64Data = event.payload as string;
+        const binaryString = atob(base64Data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        
+        // Feed to Broadway decoder - it will automatically render to canvas
+        decoder.decode(bytes);
+        
+        frameCount++;
+        
+        // Calculate packets per second
+        const now = Math.floor(Date.now() / 1000);
+        if (now !== lastSecond) {
+          packetsPerSecond = frameCount;
+          frameCount = 0;
+          lastSecond = now;
+          
+          if (packetsPerSecond > 0) {
+            console.log('[VideoFeed] Decoding at', packetsPerSecond, 'fps');
+          }
+        }
+      } catch (error) {
+        console.error('[VideoFeed] Error decoding packet:', error);
+      }
+    });
+    
+    // Auto-start stream when connected
+    const unsubscribe = droneStore.subscribe($drone => {
+      if ($drone.connected && !streaming) {
+        setTimeout(() => {
+          console.log('[VideoFeed] Auto-starting stream...');
+          startStream();
+        }, 1500);
+      } else if (!$drone.connected && streaming) {
+        stopStream();
+      }
+    });
+    
+    return () => unsubscribe();
   });
   
-  async function toggleStream() {
-    if (!$droneStore.connected) {
-      toast.error('Connect to drone first');
+  async function startStream() {
+    if (!$droneStore.connected || streaming) return;
+    
+    if (!decoder) {
+      toast.error('Video decoder not ready');
       return;
     }
     
-    if (!streaming) {
-      try {
-        await invoke('start_video_stream');
-        streaming = true;
-        $droneStore.setVideoActive(true);
-        toast.success('Video stream started');
-        startVideoLoop();
-      } catch (error) {
-        toast.error('Failed to start stream: ' + error);
-      }
-    } else {
-      try {
-        await invoke('stop_video_stream');
-        streaming = false;
-        $droneStore.setVideoActive(false);
-        toast.info('Video stream stopped');
-        stopVideoLoop();
-      } catch (error) {
-        toast.error('Failed to stop stream: ' + error);
-      }
+    try {
+      console.log('[VideoFeed] Starting video stream...');
+      frameCount = 0;
+      packetsPerSecond = 0;
+      lastSecond = Math.floor(Date.now() / 1000);
+      
+      await invoke('start_video_stream');
+      streaming = true;
+      droneStore.setVideoActive(true);
+      toast.success('Video stream started - decoding H.264');
+      console.log('[VideoFeed] ✅ Video stream started, decoder ready');
+      
+    } catch (error) {
+      console.error('[VideoFeed] ❌ Failed to start stream:', error);
+      toast.error('Failed to start stream: ' + error);
     }
   }
   
-  function startVideoLoop() {
-    // TODO: Implement actual video frame retrieval from UDP socket
-    // For now, this is a placeholder
-    streamInterval = setInterval(() => {
-      if (ctx && canvas) {
-        // Draw placeholder or actual frame here
-        ctx.fillStyle = '#1a1a1a';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '20px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('Video Stream Active', canvas.width / 2, canvas.height / 2);
-        ctx.font = '14px sans-serif';
-        ctx.fillText('Waiting for frames...', canvas.width / 2, canvas.height / 2 + 30);
-        
-        // Draw recognition bbox if active
-        if ($recognitionStore.active && $recognitionStore.bbox) {
-          const bbox = $recognitionStore.bbox;
-          ctx.strokeStyle = '#22c55e';
-          ctx.lineWidth = 3;
-          ctx.strokeRect(bbox.x, bbox.y, bbox.width, bbox.height);
-          
-          if ($recognitionStore.recognizedName) {
-            ctx.fillStyle = '#22c55e';
-            ctx.fillRect(bbox.x, bbox.y - 30, 200, 30);
-            ctx.fillStyle = '#ffffff';
-            ctx.font = '16px sans-serif';
-            ctx.textAlign = 'left';
-            ctx.fillText(
-              `${$recognitionStore.recognizedName} (${Math.round($recognitionStore.confidence * 100)}%)`,
-              bbox.x + 5,
-              bbox.y - 10
-            );
-          }
-        }
-      }
-    }, 33); // ~30 FPS
-  }
-  
-  function stopVideoLoop() {
-    if (streamInterval) {
-      clearInterval(streamInterval);
+  async function stopStream() {
+    if (!streaming) return;
+    
+    try {
+      console.log('[VideoFeed] Stopping video stream...');
+      await invoke('stop_video_stream');
+      streaming = false;
+      droneStore.setVideoActive(false);
+      toast.info('Video stream stopped');
+      console.log('[VideoFeed] ✅ Video stream stopped');
+    } catch (error) {
+      console.error('[VideoFeed] ❌ Failed to stop stream:', error);
     }
   }
   
   async function takePicture() {
-    if (!streaming) {
-      toast.error('Start video stream first');
-      return;
-    }
+    if (!canvas) return;
     
-    // TODO: Implement picture capture
-    toast.success('Picture captured');
+    try {
+      console.log('[VideoFeed] Capturing picture...');
+      
+      const dataUrl = canvas.toDataURL('image/png');
+      const timestamp = Date.now();
+      const filename = `tello_capture_${timestamp}.png`;
+      
+      galleryStore.addImage({
+        id: `img_${timestamp}`,
+        filename,
+        path: dataUrl,
+        timestamp,
+        size: dataUrl.length,
+        thumbnail: dataUrl
+      });
+      
+      console.log('[VideoFeed] ✅ Picture captured:', filename);
+      toast.success('Picture saved to gallery');
+    } catch (error) {
+      console.error('[VideoFeed] Capture failed:', error);
+      toast.error('Failed to capture picture');
+    }
   }
   
   onDestroy(() => {
-    stopVideoLoop();
+    console.log('[VideoFeed] Component destroyed');
+    streaming = false;
+    if (unlistenVideo) {
+      unlistenVideo();
+    }
+    if (decoder) {
+      decoder = null;
+    }
   });
 </script>
 
-<Card>
-  <CardHeader>
-    <CardTitle>Live Video Feed</CardTitle>
-  </CardHeader>
-  <CardContent>
-    <div class="space-y-4">
-      <div class="aspect-video bg-black rounded-lg overflow-hidden relative">
-        <canvas 
-          bind:this={canvas}
-          width="960"
-          height="720"
-          class="w-full h-full"
-        />
-        
-        {#if !streaming}
-          <div class="absolute inset-0 flex flex-col items-center justify-center text-white bg-black bg-opacity-50">
-            <VideoIcon class="h-12 w-12 mb-4 opacity-50" />
-            <p class="text-lg">Video stream inactive</p>
-            <p class="text-sm opacity-70">Connect and start stream to view</p>
-          </div>
+<!-- Video feed with H.264 decoding -->
+<div class="h-full w-full flex flex-col p-4" style="background-color: #000000">
+  <!-- Video controls overlay -->
+  <div class="flex items-center justify-between mb-2 px-2">
+    <div class="flex items-center gap-2">
+      <div 
+        class="w-2 h-2 rounded-full" 
+        style="background-color: {streaming && packetsPerSecond > 0 ? '#ef4444' : '#6b7280'}; {streaming && packetsPerSecond > 0 ? 'animation: pulse 2s infinite' : ''}"
+      ></div>
+      <span class="text-sm font-medium" style="color: white">
+        {#if streaming && packetsPerSecond > 0}
+          LIVE - {packetsPerSecond} FPS
+        {:else if streaming}
+          LIVE - Waiting for frames...
+        {:else if $droneStore.connected}
+          Ready
+        {:else}
+          Disconnected
         {/if}
-      </div>
-      
-      <div class="flex gap-2">
-        <Button 
-          on:click={toggleStream} 
-          class="flex-1"
-          disabled={!$droneStore.connected}
-        >
-          {#if streaming}
-            <Square class="mr-2 h-4 w-4" />
-            Stop Stream
-          {:else}
-            <Play class="mr-2 h-4 w-4" />
-            Start Stream
-          {/if}
-        </Button>
-        
-        <Button 
-          on:click={takePicture}
-          variant="outline"
-          disabled={!streaming}
-        >
-          <Camera class="h-4 w-4" />
-        </Button>
-      </div>
+      </span>
     </div>
-  </CardContent>
-</Card>
+    
+    <div class="flex gap-2">
+      {#if streaming}
+        <Button on:click={stopStream} variant="outline" size="sm">
+          <VideoOff class="h-3 w-3 mr-1" />
+          Stop
+        </Button>
+      {:else}
+        <Button on:click={startStream} size="sm" disabled={!$droneStore.connected}>
+          <Video class="h-3 w-3 mr-1" />
+          Start
+        </Button>
+      {/if}
+      
+      <Button on:click={takePicture} variant="outline" size="sm" disabled={!streaming || packetsPerSecond === 0}>
+        <Camera class="h-3 w-3" />
+      </Button>
+    </div>
+  </div>
+  
+  <!-- Canvas - Broadway will render decoded video here -->
+  <div class="flex-1 relative flex items-center justify-center">
+    <canvas 
+      bind:this={canvas}
+      class="max-w-full max-h-full"
+      style="display: block; object-fit: contain; background-color: #000000"
+    />
+    
+    {#if !$droneStore.connected}
+      <div class="absolute inset-0 flex flex-col items-center justify-center" style="background-color: rgba(0,0,0,0.95)">
+        <p class="text-xl font-medium mb-2" style="color: white">Not Connected</p>
+        <p class="text-sm" style="color: #9ca3af">Connect to drone to view live video</p>
+      </div>
+    {:else if streaming && packetsPerSecond === 0}
+      <div class="absolute inset-0 flex flex-col items-center justify-center" style="background-color: rgba(0,0,0,0.8)">
+        <div class="animate-spin rounded-full h-12 w-12 border-4 border-t-transparent mb-4" style="border-color: #3b82f6; border-top-color: transparent"></div>
+        <p class="text-lg font-medium" style="color: white">Waiting for video stream...</p>
+        <p class="text-sm" style="color: #9ca3af">H.264 decoder ready</p>
+      </div>
+    {/if}
+  </div>
+</div>
+
+<style>
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+</style>

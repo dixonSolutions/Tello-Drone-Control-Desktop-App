@@ -17,11 +17,10 @@
   import Settings from './lib/components/Settings.svelte';
   import Recording from './lib/components/Recording.svelte';
   import ConnectionStatus from './lib/components/ConnectionStatus.svelte';
-  import SkeletonLoader from './lib/components/SkeletonLoader.svelte';
+  import Gallery from './lib/components/Gallery.svelte';
   
-  let activeTab: 'controls' | 'modes' | 'tricks' | 'models' | 'settings' = 'controls';
+  let activeTab: 'controls' | 'modes' | 'tricks' | 'models' | 'gallery' | 'settings' = 'controls';
   let appReady = false;
-  let componentsLoaded = false;
   
   onMount(() => {
     console.log('='.repeat(60));
@@ -32,12 +31,6 @@
     
     themeStore.init();
     console.log('[App] Theme system initialized');
-    
-    // Simulate component loading
-    setTimeout(() => {
-      componentsLoaded = true;
-      console.log('[App] Components loaded');
-    }, 500);
     
     setTimeout(() => {
       appReady = true;
@@ -71,68 +64,80 @@
 <Toaster position="top-right" duration={3000} />
 
 {#if appReady}
-  <main class="min-h-screen flex flex-col" style="background-color: var(--color-background)" transition:fade={{ duration: 300 }}>
-    <!-- Header -->
-    <header class="border-b theme-border" style="background-color: var(--color-surface)">
-      <div class="container flex h-16 items-center justify-between py-4 px-6">
-        <div class="flex items-center gap-4">
-          <h1 class="text-2xl font-bold theme-text">Tello Drone Control</h1>
+  <!-- NO SCROLL LAYOUT - Everything fits on screen like Python app -->
+  <main class="h-screen flex flex-col overflow-hidden" style="background-color: var(--color-background)" transition:fade={{ duration: 300 }}>
+    
+    <!-- Compact Header - Fixed height -->
+    <header class="border-b flex-shrink-0" style="border-color: var(--color-border); background-color: var(--color-surface); height: 50px">
+      <div class="h-full px-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <h1 class="text-base font-bold" style="color: var(--color-text)">Tello Control</h1>
           <ConnectionStatus />
         </div>
         <div class="flex items-center gap-3">
           <Telemetry />
-          <div class="h-8 w-px theme-border" style="background-color: var(--color-border)"></div>
           <ThemeSelector />
         </div>
       </div>
     </header>
 
-    <!-- Main Content -->
-    <div class="flex-1 container py-6 px-6">
-      <!-- Tabs Navigation -->
-      <div class="mb-6 flex gap-2 theme-surface rounded-lg p-2 shadow-sm border theme-border">
-        <button
-          class="px-6 py-2 rounded-md font-semibold transition-all"
-          style="background-color: {activeTab === 'controls' ? 'var(--color-primary)' : 'transparent'}; color: {activeTab === 'controls' ? 'white' : 'var(--color-text-muted)'}"
-          on:click={() => changeTab('controls')}
-        >
-          Controls
-        </button>
-        <button
-          class="px-6 py-2 rounded-md font-semibold transition-all"
-          style="background-color: {activeTab === 'modes' ? 'var(--color-primary)' : 'transparent'}; color: {activeTab === 'modes' ? 'white' : 'var(--color-text-muted)'}"
-          on:click={() => changeTab('modes')}
-        >
-          Modes
-        </button>
-        <button
-          class="px-6 py-2 rounded-md font-semibold transition-all"
-          style="background-color: {activeTab === 'tricks' ? 'var(--color-primary)' : 'transparent'}; color: {activeTab === 'tricks' ? 'white' : 'var(--color-text-muted)'}"
-          on:click={() => changeTab('tricks')}
-        >
-          Tricks
-        </button>
-        <button
-          class="px-6 py-2 rounded-md font-semibold transition-all"
-          style="background-color: {activeTab === 'models' ? 'var(--color-primary)' : 'transparent'}; color: {activeTab === 'models' ? 'white' : 'var(--color-text-muted)'}"
-          on:click={() => changeTab('models')}
-        >
-          Models
-        </button>
-        <button
-          class="px-6 py-2 rounded-md font-semibold transition-all"
-          style="background-color: {activeTab === 'settings' ? 'var(--color-primary)' : 'transparent'}; color: {activeTab === 'settings' ? 'white' : 'var(--color-text-muted)'}"
-          on:click={() => changeTab('settings')}
-        >
-          Settings
-        </button>
+    <div class="flex-1 flex flex-col min-h-0">
+      <!-- Video Feed - Fixed 55% of remaining height -->
+      <div class="flex-shrink-0" style="height: 55%">
+        <VideoFeed />
       </div>
 
-      <!-- Content Grid -->
-      <div class="grid gap-6 lg:grid-cols-2">
-        <!-- Left Panel - Controls -->
-        <div class="space-y-6">
-          {#if componentsLoaded}
+      <!-- Controls Area - Remaining 45% -->
+      <div class="flex-shrink-0 border-t flex flex-col" style="height: 45%; border-color: var(--color-border); background-color: var(--color-surface)">
+        <!-- Tabs - Compact -->
+        <div class="flex gap-1 px-3 py-1.5 border-b flex-shrink-0" style="border-color: var(--color-border)">
+          <button
+            class="px-3 py-1 rounded text-xs font-semibold transition-colors whitespace-nowrap"
+            style="background-color: {activeTab === 'controls' ? 'var(--color-primary)' : 'transparent'}; color: {activeTab === 'controls' ? 'var(--color-text)' : 'var(--color-text-muted)'}"
+            on:click={() => changeTab('controls')}
+          >
+            Controls
+          </button>
+          <button
+            class="px-3 py-1 rounded text-xs font-semibold transition-colors whitespace-nowrap"
+            style="background-color: {activeTab === 'modes' ? 'var(--color-primary)' : 'transparent'}; color: {activeTab === 'modes' ? 'var(--color-text)' : 'var(--color-text-muted)'}"
+            on:click={() => changeTab('modes')}
+          >
+            Free Fly
+          </button>
+          <button
+            class="px-3 py-1 rounded text-xs font-semibold transition-colors whitespace-nowrap"
+            style="background-color: {activeTab === 'tricks' ? 'var(--color-primary)' : 'transparent'}; color: {activeTab === 'tricks' ? 'var(--color-text)' : 'var(--color-text-muted)'}"
+            on:click={() => changeTab('tricks')}
+          >
+            Tricks
+          </button>
+          <button
+            class="px-3 py-1 rounded text-xs font-semibold transition-colors whitespace-nowrap"
+            style="background-color: {activeTab === 'models' ? 'var(--color-primary)' : 'transparent'}; color: {activeTab === 'models' ? 'var(--color-text)' : 'var(--color-text-muted)'}"
+            on:click={() => changeTab('models')}
+          >
+            Models
+          </button>
+          <button
+            class="px-3 py-1 rounded text-xs font-semibold transition-colors whitespace-nowrap"
+            style="background-color: {activeTab === 'gallery' ? 'var(--color-primary)' : 'transparent'}; color: {activeTab === 'gallery' ? 'var(--color-text)' : 'var(--color-text-muted)'}"
+            on:click={() => changeTab('gallery')}
+          >
+            Gallery
+          </button>
+          <button
+            class="px-3 py-1 rounded text-xs font-semibold transition-colors whitespace-nowrap"
+            style="background-color: {activeTab === 'settings' ? 'var(--color-primary)' : 'transparent'}; color: {activeTab === 'settings' ? 'var(--color-text)' : 'var(--color-text-muted)'}"
+            on:click={() => changeTab('settings')}
+          >
+            Settings
+          </button>
+        </div>
+
+        <!-- Tab Content - Scrollable if needed -->
+        <div class="flex-1 overflow-y-auto px-3 py-2">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
             {#if activeTab === 'controls'}
               <DroneControl />
               <Recording />
@@ -142,59 +147,22 @@
               <Tricks />
             {:else if activeTab === 'models'}
               <FaceRecognition />
+            {:else if activeTab === 'gallery'}
+              <Gallery />
             {:else if activeTab === 'settings'}
               <Settings />
             {/if}
-          {:else}
-            <div class="theme-surface rounded-lg p-6">
-              <SkeletonLoader lines={5} height="md" />
-            </div>
-          {/if}
-        </div>
-        
-        <!-- Right Panel - Additional Controls -->
-        <div class="space-y-6">
-          {#if componentsLoaded}
-            {#if activeTab === 'controls'}
-              <Recording />
-            {/if}
-          {:else}
-            <div class="theme-surface rounded-lg p-6">
-              <SkeletonLoader lines={3} height="sm" />
-            </div>
-          {/if}
-        </div>
-      </div>
-    </div>
-
-    <!-- Video Feed at Bottom Middle -->
-    <div class="border-t theme-border py-4" style="background-color: var(--color-surface)">
-      <div class="container px-6">
-        <div class="max-w-4xl mx-auto">
-          {#if componentsLoaded}
-            <VideoFeed />
-          {:else}
-            <div class="aspect-video theme-surface rounded-lg flex items-center justify-center">
-              <SkeletonLoader lines={1} height="lg" />
-            </div>
-          {/if}
+          </div>
         </div>
       </div>
     </div>
   </main>
-{:else}
-  <!-- Fallback while loading -->
-  <div class="min-h-screen flex items-center justify-center" style="background-color: var(--color-background)">
-    <div class="text-center space-y-4">
-      <h1 class="text-3xl font-bold theme-text">Loading Tello Drone Control...</h1>
-      <SkeletonLoader lines={3} height="sm" />
-    </div>
-  </div>
 {/if}
 
 <style>
   :global(body) {
     margin: 0;
     padding: 0;
+    overflow: hidden;
   }
 </style>

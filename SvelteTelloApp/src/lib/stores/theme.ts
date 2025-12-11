@@ -2,14 +2,34 @@ import { writable } from 'svelte/store';
 import { themes, applyTheme, type ThemeName, type Theme } from '$lib/themes';
 
 function createThemeStore() {
-  // Load saved theme from localStorage or default to 'dark'
-  const savedTheme = (typeof window !== 'undefined' 
-    ? localStorage.getItem('theme') as ThemeName 
-    : null) || 'dark';
+  // Migrate old theme names to new format
+  const migrateThemeName = (oldName: string | null): ThemeName => {
+    if (!oldName) return 'dark-blue';
+    
+    // Migration map from old to new
+    const migration: Record<string, ThemeName> = {
+      'dark': 'dark-blue',
+      'light': 'light-blue',
+      'fedora': 'dark-blue',
+      'ocean': 'dark-teal',
+      'sunset': 'light-orange',
+      'forest': 'dark-green',
+      'galaxy': 'dark-purple',
+      'rose': 'light-red',
+    };
+    
+    return migration[oldName] || 'dark-blue';
+  };
   
-  console.log('[Theme] Loading saved theme:', savedTheme);
+  const savedTheme = typeof window !== 'undefined' 
+    ? localStorage.getItem('theme')
+    : null;
   
-  const { subscribe, set, update } = writable<Theme>(themes[savedTheme]);
+  const themeName = migrateThemeName(savedTheme);
+  
+  console.log('[Theme] Migrated saved theme:', savedTheme, '->', themeName);
+  
+  const { subscribe, set, update } = writable<Theme>(themes[themeName]);
 
   return {
     subscribe,
@@ -25,9 +45,15 @@ function createThemeStore() {
     },
     init: () => {
       console.log('[Theme] Initializing theme system...');
-      const theme = themes[savedTheme];
-      applyTheme(theme);
-      console.log('[Theme] Applied theme:', savedTheme);
+      const theme = themes[themeName];
+      if (theme) {
+        applyTheme(theme);
+        console.log('[Theme] Applied theme:', themeName);
+      } else {
+        console.error('[Theme] Theme not found:', themeName, 'using default');
+        const defaultTheme = themes['dark-blue'];
+        applyTheme(defaultTheme);
+      }
     }
   };
 }

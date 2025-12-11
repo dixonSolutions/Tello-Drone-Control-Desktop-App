@@ -2,97 +2,111 @@
   import { droneStore, connectionStore } from '$lib/stores/drone';
   import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { invoke } from '@tauri-apps/api/tauri';
   import Button from './ui/button/Button.svelte';
-  import { RefreshCw, Wifi, AlertCircle } from 'lucide-svelte';
+  import { RefreshCw, WifiOff, Wifi } from 'lucide-svelte';
+  import { invoke } from '@tauri-apps/api/tauri';
   
-  let showReconnect = false;
-  let reconnecting = false;
-  let lastErrorMessage = '';
+  let showPopup = false;
+  let connecting = false;
   
   onMount(() => {
     console.log('[ReconnectScreen] Component mounted');
     
-    connectionStore.subscribe(status => {
-      console.log('[ReconnectScreen] Connection status:', status);
-      showReconnect = status.status === 'error';
-      if (status.status === 'error') {
-        lastErrorMessage = status.message;
-      }
+    // Show popup whenever not connected
+    droneStore.subscribe($drone => {
+      showPopup = !$drone.connected;
+      console.log('[ReconnectScreen] Connection state:', $drone.connected, 'Show popup:', showPopup);
     });
   });
   
-  async function attemptReconnect() {
-    console.log('[ReconnectScreen] Attempting to reconnect...');
-    reconnecting = true;
-    connectionStore.setStatus('connecting', 'Reconnecting...');
+  async function attemptConnect() {
+    console.log('[ReconnectScreen] Attempting to connect...');
+    connecting = true;
+    connectionStore.setStatus('connecting', 'Connecting...');
     
     try {
       const result: any = await invoke('connect_drone');
-      console.log('[ReconnectScreen] Reconnect result:', result);
+      console.log('[ReconnectScreen] Connect result:', result);
       
       if (result.success) {
         droneStore.setConnected(true);
-        connectionStore.setStatus('connected', 'Reconnected successfully');
-        showReconnect = false;
+        connectionStore.setStatus('connected', 'Connected successfully');
       } else {
         throw new Error(result.message);
       }
     } catch (error) {
-      console.error('[ReconnectScreen] Reconnect failed:', error);
+      console.error('[ReconnectScreen] Connect failed:', error);
       connectionStore.setStatus('error', String(error));
     } finally {
-      reconnecting = false;
+      connecting = false;
     }
   }
 </script>
 
-{#if showReconnect}
+{#if showPopup}
+  <!-- Non-closeable overlay -->
   <div 
-    class="fixed inset-0 flex items-center justify-center z-50 bg-black/70 backdrop-blur-sm"
+    class="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-md"
+    style="background-color: rgba(0, 0, 0, 0.85)"
     transition:fade={{ duration: 200 }}
   >
-    <div class="theme-surface rounded-lg shadow-2xl p-8 max-w-md w-full mx-4 animate-slide-up">
+    <div class="rounded-lg shadow-2xl p-10 max-w-lg w-full mx-4" style="background-color: var(--color-surface)">
       <div class="text-center space-y-6">
         <div class="relative inline-block">
-          <AlertCircle class="h-20 w-20 text-error mx-auto" />
+          <WifiOff class="h-32 w-32 mx-auto" style="color: var(--color-error)" />
         </div>
         
         <div>
-          <h3 class="text-2xl font-bold theme-text mb-2">
-            Connection Lost
-          </h3>
-          <p class="theme-text-muted text-sm">
-            {lastErrorMessage || 'Unable to communicate with the drone'}
+          <h2 class="text-4xl font-bold mb-3" style="color: var(--color-text)">
+            Not Connected
+          </h2>
+          <p class="text-lg" style="color: var(--color-text-muted)">
+            Connect to your Tello drone to get started
           </p>
         </div>
         
-        <div class="space-y-3 text-sm theme-text-muted text-left p-4 rounded-md" style="background-color: var(--color-surface)">
-          <p class="font-semibold theme-text">Troubleshooting:</p>
-          <ul class="list-disc list-inside space-y-1">
-            <li>Check WiFi connection to TELLO-XXXXXX</li>
-            <li>Ensure drone is powered on</li>
-            <li>Move closer to the drone</li>
-            <li>Restart the drone if needed</li>
+        <div class="text-sm text-left p-4 rounded-lg space-y-2" style="background-color: var(--color-background)">
+          <p class="font-semibold mb-2" style="color: var(--color-text)">Before connecting:</p>
+          <ul class="list-disc list-inside space-y-1" style="color: var(--color-text-muted)">
+            <li>Turn on your Tello drone</li>
+            <li>Connect computer to TELLO-XXXXXX WiFi network</li>
+            <li>Wait for WiFi connection to establish</li>
           </ul>
         </div>
         
         <Button 
-          on:click={attemptReconnect}
-          disabled={reconnecting}
-          class="w-full theme-primary"
+          on:click={attemptConnect}
+          disabled={connecting}
+          class="w-full"
           size="lg"
+          style="background-color: var(--color-primary); color: var(--color-text); font-size: 1.125rem; padding: 1.5rem"
         >
-          {#if reconnecting}
-            <RefreshCw class="mr-2 h-5 w-5 animate-spin" />
-            Reconnecting...
+          {#if connecting}
+            <RefreshCw class="mr-2 h-6 w-6 animate-spin" />
+            Connecting...
           {:else}
-            <Wifi class="mr-2 h-5 w-5" />
-            Reconnect
+            <Wifi class="mr-2 h-6 w-6" />
+            Connect to Drone
           {/if}
         </Button>
       </div>
     </div>
   </div>
 {/if}
+
+<style>
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  
+  .animate-spin {
+    animation: spin 1s linear infinite;
+  }
+</style>
+
 

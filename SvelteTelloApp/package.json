@@ -28,7 +28,9 @@
   "dependencies": {
     "@tauri-apps/api": "^1.5.3",
     "bits-ui": "^0.11.8",
+    "broadway-player": "^0.1.1",
     "clsx": "^2.1.0",
+    "jsmpeg-player": "^3.0.3",
     "lucide-svelte": "^0.303.0",
     "mode-watcher": "^0.2.2",
     "svelte-sonner": "^0.3.19",

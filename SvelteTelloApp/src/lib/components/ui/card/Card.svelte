@@ -11,9 +11,9 @@
 </script>
 
 <div
-  class={cn('rounded-lg border bg-card text-card-foreground shadow-sm', className)}
+  class={cn('rounded-lg border shadow-sm', className)}
+  style="background-color: var(--color-surface); border-color: var(--color-border); color: var(--color-text)"
   {...$$restProps}
 >
   <slot />
 </div>
-

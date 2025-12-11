@@ -55,7 +55,8 @@
             <Button 
               on:click={() => performFlip('f')}
               variant="outline"
-              class="w-full theme-primary text-white"
+              class="w-full theme-primary"
+              style="background-color: var(--color-primary); color: var(--color-text)"
             >
               <ArrowUp class="h-5 w-5" />
             </Button>
@@ -66,7 +67,8 @@
             <Button 
               on:click={() => performFlip('l')}
               variant="outline"
-              class="w-full theme-primary text-white"
+              class="w-full theme-primary"
+              style="background-color: var(--color-primary); color: var(--color-text)"
             >
               <ArrowLeft class="h-5 w-5" />
             </Button>
@@ -82,7 +84,8 @@
             <Button 
               on:click={() => performFlip('r')}
               variant="outline"
-              class="w-full theme-primary text-white"
+              class="w-full theme-primary"
+              style="background-color: var(--color-primary); color: var(--color-text)"
             >
               <ArrowRight class="h-5 w-5" />
             </Button>
@@ -93,14 +96,15 @@
             <Button 
               on:click={() => performFlip('b')}
               variant="outline"
-              class="w-full theme-primary text-white"
+              class="w-full theme-primary"
+              style="background-color: var(--color-primary); color: var(--color-text)"
             >
               <ArrowDown class="h-5 w-5" />
             </Button>
           </div>
         </div>
         
-        <div class="p-3 bg-warning text-white rounded-md text-sm">
+        <div class="p-3 rounded-md text-sm" style="background-color: var(--color-warning); color: var(--color-text)">
           <p class="font-semibold mb-1">Warning:</p>
           <p>Ensure adequate space and battery before performing tricks</p>
         </div>

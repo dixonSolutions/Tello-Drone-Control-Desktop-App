@@ -3,12 +3,45 @@ name: Monorepo CI/CD
 on:
   push:
     branches: [ main, develop ]
+    paths:
+      - 'PythonApp/**'
+      - 'SvelteTelloApp/**'
+      - 'InstallFrontEnd/**'
+      - '.github/workflows/**'
   pull_request:
     branches: [ main, develop ]
+    paths:
+      - 'PythonApp/**'
+      - 'SvelteTelloApp/**'
+      - 'InstallFrontEnd/**'
+      - '.github/workflows/**'
 
 jobs:
+  # Detect changes to determine which jobs to run
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      svelte: ${{ steps.filter.outputs.svelte }}
+      angular: ${{ steps.filter.outputs.angular }}
+    steps:
+    - uses: actions/checkout@v4
+    
+    - uses: dorny/paths-filter@v2
+      id: filter
+      with:
+        filters: |
+          python:
+            - 'PythonApp/**'
+          svelte:
+            - 'SvelteTelloApp/**'
+          angular:
+            - 'InstallFrontEnd/**'
+
   # Python App Tests and Linting
   python-app:
+    needs: changes
+    if: ${{ needs.changes.outputs.python == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -37,6 +70,8 @@ jobs:
 
   # Svelte + Tauri App Build
   svelte-tauri-app:
+    needs: changes
+    if: ${{ needs.changes.outputs.svelte == 'true' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -84,4 +119,39 @@ jobs:
         name: tauri-app-${{ matrix.os }}
         path: |
           SvelteTelloApp/src-tauri/target/release/bundle/
+
+  # Angular Frontend App Build
+  angular-frontend:
+    needs: changes
+    if: ${{ needs.changes.outputs.angular == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./InstallFrontEnd/TelloDroneFrontEnd
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: ./InstallFrontEnd/TelloDroneFrontEnd/package-lock.json
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Lint Angular app
+      run: npm run ng lint || echo "No lint script configured"
+    
+    - name: Build Angular app
+      run: npm run build
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: angular-app-build
+        path: |
+          InstallFrontEnd/TelloDroneFrontEnd/dist/
 

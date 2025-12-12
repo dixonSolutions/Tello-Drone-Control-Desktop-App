@@ -1,0 +1,4 @@
+:host ::ng-deep .p-drawer {
+  border-right: 1px solid var(--surface-border);
+}
+

@@ -1,0 +1,20 @@
+.install-hero {
+  padding: 4rem 1rem 2rem 1rem;
+  text-align: center;
+  background-image: url('/download.jpeg');
+  background-size: cover;
+  background-position: center;
+}
+
+.install-hero h1 {
+  margin: 0;
+  font-size: clamp(1.75rem, 4vw, 3rem);
+  font-weight: 700;
+}
+
+.install-body {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+

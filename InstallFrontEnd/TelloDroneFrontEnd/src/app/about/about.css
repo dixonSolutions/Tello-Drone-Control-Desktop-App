@@ -1,0 +1,22 @@
+.about {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.about h1 {
+  margin: 0 0 0.5rem 0;
+  line-height: 1.2;
+}
+
+.about p {
+  margin: 0 0 1rem 0;
+}
+
+.about-points {
+  display: grid;
+  gap: 0.5rem;
+  padding-left: 1.25rem;
+}
+
+

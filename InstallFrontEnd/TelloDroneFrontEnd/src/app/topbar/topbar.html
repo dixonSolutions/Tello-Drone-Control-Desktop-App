@@ -1,0 +1,19 @@
+<p-menubar>
+  <ng-template pTemplate="start">
+    <button pButton type="button" class="p-button-text p-button-plain" (click)="onToggleMenu()" aria-label="Open Menu">
+      <i class="pi pi-bars"></i>
+    </button>
+    <span class="app-title">TelloApp</span>
+    <nav class="nav-links">
+      <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}">Home</a>
+      <a routerLink="/install" routerLinkActive="active"> ✨Install✨</a>
+      <a routerLink="/about" routerLinkActive="active">About</a>
+      <div class="nav-actions">
+        <i class="pi" [ngClass]="data.darkMode() ? 'pi-moon' : 'pi-sun'" aria-hidden="true"></i>
+        <p-toggleSwitch [ngModel]="data.darkMode()" (onChange)="onToggleTheme()"></p-toggleSwitch>
+      </div>
+    </nav>
+  </ng-template>
+  <ng-template pTemplate="end"></ng-template>
+  
+</p-menubar>

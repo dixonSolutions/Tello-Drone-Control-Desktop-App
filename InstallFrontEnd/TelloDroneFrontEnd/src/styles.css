@@ -1,0 +1,58 @@
+/* Menubar: edge-to-edge, no borders, no radius, no gutters */
+app-topbar,
+app-topbar .p-menubar {
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 2000;
+  width: 100%;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+/* Remove internal paddings */
+app-topbar .p-menubar-start,
+app-topbar .p-menubar-end,
+app-topbar .p-menubar-root-list {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* Optional: tighten link spacing */
+app-topbar .nav-links { gap: 0.5rem; margin-left: 0; }
+
+/* Global content centering: keep topbar full-width, center everything else */
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+app-root {
+  display: block;
+  min-height: 100%;
+}
+
+/* Center immediate children of app-root, except the topbar */
+app-root > *:not(app-topbar) {
+  width: 100%;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  box-sizing: border-box;
+}
+
+/* Explicitly ensure main routed components are block-level */
+app-home,
+app-install,
+app-about {
+  display: block;
+}

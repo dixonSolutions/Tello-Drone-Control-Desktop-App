@@ -13,7 +13,6 @@
   let images = [];
   
   onMount(async () => {
-    console.log('[Gallery] Loading images...');
     await loadImages();
     
     galleryStore.subscribe($images => {
@@ -24,7 +23,6 @@
   async function loadImages() {
     try {
       // TODO: Load images from local storage via Tauri
-      console.log('[Gallery] Loading images from storage...');
     } catch (error) {
       console.error('[Gallery] Failed to load images:', error);
     }
@@ -33,7 +31,6 @@
   async function deleteImage(id: string) {
     if (confirm('Delete this image?')) {
       try {
-        console.log('[Gallery] Deleting image:', id);
         // TODO: Delete file via Tauri
         galleryStore.removeImage(id);
         toast.success('Image deleted');
@@ -46,11 +43,11 @@
   
   async function openFolder() {
     try {
-      console.log('[Gallery] Opening images folder...');
-      // TODO: Open folder via Tauri
-      toast.info('Opening images folder...');
+      await invoke('open_images_folder');
+      toast.success('Opening images folder');
     } catch (error) {
       console.error('[Gallery] Failed to open folder:', error);
+      toast.error('Failed to open images folder');
     }
   }
 </script>

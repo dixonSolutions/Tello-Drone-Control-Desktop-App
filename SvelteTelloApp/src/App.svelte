@@ -23,36 +23,14 @@
   let appReady = false;
   
   onMount(() => {
-    console.log('='.repeat(60));
-    console.log('🚁 TELLO DRONE CONTROL APP STARTING');
-    console.log('='.repeat(60));
-    console.log('[App] Mounting main application...');
-    console.log('[App] Current timestamp:', new Date().toISOString());
-    
     themeStore.init();
-    console.log('[App] Theme system initialized');
     
     setTimeout(() => {
       appReady = true;
-      console.log('[App] Application ready!');
-      console.log('='.repeat(60));
     }, 1000);
-    
-    // Log drone state changes
-    const unsubscribe = droneStore.subscribe(state => {
-      console.log('[App] Drone state updated:', {
-        connected: state.connected,
-        flying: state.flying,
-        battery: state.battery,
-        height: state.height
-      });
-    });
-    
-    return unsubscribe;
   });
   
   function changeTab(tab: typeof activeTab) {
-    console.log('[App] Switching to tab:', tab);
     activeTab = tab;
   }
 </script>
@@ -61,7 +39,7 @@
 <LoadingScreen />
 <ConnectingOverlay />
 <ReconnectScreen />
-<Toaster position="top-right" duration={3000} />
+<Toaster position="bottom-right" duration={3000} />
 
 {#if appReady}
   <!-- NO SCROLL LAYOUT - Everything fits on screen like Python app -->
@@ -103,7 +81,7 @@
             style="background-color: {activeTab === 'modes' ? 'var(--color-primary)' : 'transparent'}; color: {activeTab === 'modes' ? 'var(--color-text)' : 'var(--color-text-muted)'}"
             on:click={() => changeTab('modes')}
           >
-            Free Fly
+            Modes
           </button>
           <button
             class="px-3 py-1 rounded text-xs font-semibold transition-colors whitespace-nowrap"

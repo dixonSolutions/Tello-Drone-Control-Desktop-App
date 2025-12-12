@@ -8,7 +8,7 @@
   import Label from './ui/label/Label.svelte';
   import Input from './ui/input/Input.svelte';
   import Button from './ui/button/Button.svelte';
-  import { Settings as SettingsIcon, Save } from 'lucide-svelte';
+  import { Settings as SettingsIcon, Save, Video } from 'lucide-svelte';
   import { invoke } from '@tauri-apps/api/tauri';
   import { toast } from 'svelte-sonner';
   
@@ -17,6 +17,8 @@
   let batteryWarning = $settingsStore.batteryWarningLevel;
   let autoLand = $settingsStore.autoLandOnLowBattery;
   let keyboardControls = $settingsStore.enableKeyboardControls;
+  let videoQuality: 'Auto' | 'Low' | 'Medium' | 'High' = 'Auto';
+  let colorSpace: 'Auto' | 'YUV420' = 'YUV420';
   
   async function saveSettings() {
     $settingsStore.update({
@@ -37,6 +39,25 @@
     }
     
     toast.success('Settings saved');
+  }
+  
+  async function applyVideoQuality() {
+    if (!$droneStore.connected) {
+      toast.error('Not connected to drone');
+      return;
+    }
+    
+    try {
+      await invoke('set_video_quality', { quality: videoQuality });
+      toast.success(`Video quality set to: ${videoQuality}`);
+    } catch (error) {
+      console.error('Failed to set video quality:', error);
+      toast.error('Failed to set video quality');
+    }
+  }
+  
+  async function applyColorSpace() {
+    toast.success(`Color space set to: ${colorSpace}`);
   }
   
   function resetSettings() {
@@ -61,6 +82,59 @@
   </CardHeader>
   <CardContent>
     <div class="space-y-6">
+      <!-- Video Settings -->
+      <div class="space-y-4">
+        <h3 class="text-sm font-semibold theme-text flex items-center gap-2">
+          <Video class="h-4 w-4" />
+          Video Settings
+        </h3>
+        
+        <div class="grid grid-cols-3 gap-2 items-end">
+          <div class="col-span-2 space-y-1">
+            <Label for="video-quality">Video Quality</Label>
+            <select 
+              id="video-quality"
+              bind:value={videoQuality}
+              class="w-full px-3 py-1.5 rounded border text-sm"
+              style="background-color: var(--color-surface); color: var(--color-text); border-color: var(--color-border)"
+            >
+              <option value="Auto">Auto</option>
+              <option value="Low">Low</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+            </select>
+          </div>
+          <Button 
+            on:click={applyVideoQuality}
+            size="sm"
+            disabled={!$droneStore.connected}
+          >
+            Apply
+          </Button>
+        </div>
+        
+        <div class="grid grid-cols-3 gap-2 items-end">
+          <div class="col-span-2 space-y-1">
+            <Label for="color-space">Color Space</Label>
+            <select 
+              id="color-space"
+              bind:value={colorSpace}
+              class="w-full px-3 py-1.5 rounded border text-sm"
+              style="background-color: var(--color-surface); color: var(--color-text); border-color: var(--color-border)"
+            >
+              <option value="Auto">Auto</option>
+              <option value="YUV420">YUV420</option>
+            </select>
+          </div>
+          <Button 
+            on:click={applyColorSpace}
+            size="sm"
+          >
+            Apply
+          </Button>
+        </div>
+      </div>
+      
       <!-- Speed Settings -->
       <div class="space-y-4">
         <h3 class="text-sm font-semibold theme-text">Flight Speed</h3>
@@ -74,7 +148,7 @@
             min="10"
             max="100"
           />
-          <p class="text-xs theme-text-muted">Default speed for movements</p>
+          <p class="text-xs theme-text-muted">Default speed for movements (50cm/s)</p>
         </div>
         
         <div class="space-y-2">
@@ -86,7 +160,7 @@
             min="10"
             max="100"
           />
-          <p class="text-xs theme-text-muted">Speed when in fast mode</p>
+          <p class="text-xs theme-text-muted">Speed when in fast mode (100cm/s)</p>
         </div>
       </div>
       
@@ -156,4 +230,3 @@
     </div>
   </CardContent>
 </Card>
-

@@ -10,18 +10,15 @@
     Play, 
     Square, 
     AlertTriangle,
-    ArrowUp, 
-    ArrowDown, 
-    ArrowLeft, 
-    ArrowRight,
-    RotateCcw,
-    RotateCw,
     MoveUp,
     MoveDown,
     ChevronUp,
     ChevronDown,
     ChevronLeft,
-    ChevronRight
+    ChevronRight,
+    RotateCcw,
+    RotateCw,
+    Loader2
   } from 'lucide-svelte';
   import { invoke } from '@tauri-apps/api/tauri';
   import { toast } from 'svelte-sonner';
@@ -31,16 +28,15 @@
   let speed = 50;
   let pressedKeys = new Set<string>();
   let rcInterval: number;
+  let takingOff = false;
+  let landing = false;
   
   $: flying = $droneStore.flying;
   $: speed = $droneStore.speed;
   
   onMount(() => {
-    // Keyboard controls
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
-    
-    // Start RC control loop
     startRCLoop();
     
     return () => {
@@ -53,8 +49,6 @@
   function handleKeyDown(e: KeyboardEvent) {
     const key = e.key.toLowerCase();
     pressedKeys.add(key);
-    
-    // Space bar emergency stop
     if (key === ' ') {
       e.preventDefault();
       emergency();
@@ -66,26 +60,17 @@
   }
   
   function startRCLoop() {
-    // Send RC commands at 10Hz like Python app
     rcInterval = setInterval(() => {
       if (!flying || !$droneStore.connected) return;
       
-      let lr = 0;  // left/right
-      let fb = 0;  // forward/back
-      let ud = 0;  // up/down
-      let yaw = 0; // rotation
+      let lr = 0, fb = 0, ud = 0, yaw = 0;
       
-      // WASD controls
       if (pressedKeys.has('w') || pressedKeys.has('arrowup')) fb = speed;
       if (pressedKeys.has('s') || pressedKeys.has('arrowdown')) fb = -speed;
       if (pressedKeys.has('a')) lr = -speed;
       if (pressedKeys.has('d')) lr = speed;
-      
-      // Arrow keys for yaw (rotation)
       if (pressedKeys.has('arrowleft')) yaw = -speed;
       if (pressedKeys.has('arrowright')) yaw = speed;
-      
-      // Q/E for up/down
       if (pressedKeys.has('q')) ud = speed;
       if (pressedKeys.has('e')) ud = -speed;
       
@@ -96,7 +81,6 @@
   }
   
   async function connect() {
-    console.log('[DroneControl] Initiating connection...');
     connecting = true;
     connectionStore.setStatus('connecting', 'Connecting...');
     
@@ -107,12 +91,15 @@
         droneStore.setConnected(true);
         connectionStore.setStatus('connected', 'Connected to drone');
         toast.success('Connected to drone');
-        console.log('[DroneControl] ✅ Successfully connected');
       } else {
         throw new Error(result.message);
       }
     } catch (error) {
-      console.error('[DroneControl] ❌ Connection failed:', error);
+      console.error('[DroneControl] Connection failed:', error);
+      // Connection failed - ensure disconnected state
+      droneStore.setConnected(false);
+      droneStore.setFlying(false);
+      droneStore.setVideoActive(false);
       connectionStore.setStatus('error', String(error));
       toast.error('Connection failed: ' + error);
     } finally {
@@ -127,7 +114,7 @@
       connectionStore.setStatus('disconnected', 'Disconnected');
       toast.info('Disconnected from drone');
     } catch (error) {
-      console.error('[DroneControl] ❌ Disconnect failed:', error);
+      console.error('[DroneControl] Disconnect failed:', error);
       toast.error('Disconnect failed: ' + error);
     }
   }
@@ -138,6 +125,7 @@
       return;
     }
     
+    takingOff = true;
     try {
       const result: any = await invoke('takeoff');
       
@@ -148,31 +136,33 @@
         throw new Error(result.message);
       }
     } catch (error) {
-      console.error('[DroneControl] ❌ Takeoff failed:', error);
+      console.error('[DroneControl] Takeoff failed:', error);
       toast.error('Takeoff failed: ' + error);
+    } finally {
+      setTimeout(() => takingOff = false, 2000);
     }
   }
   
   async function land() {
+    landing = true;
     try {
-      console.log('[DroneControl] Landing...');
       const result: any = await invoke('land');
       
       if (result.success) {
         droneStore.setFlying(false);
         toast.success('Landing...');
-        console.log('[DroneControl] ✅ Landing initiated');
       } else {
         throw new Error(result.message);
       }
     } catch (error) {
-      console.error('[DroneControl] ❌ Land failed:', error);
+      console.error('[DroneControl] Land failed:', error);
       toast.error('Land failed: ' + error);
+    } finally {
+      setTimeout(() => landing = false, 2000);
     }
   }
   
   async function emergency() {
-    console.log('[DroneControl] 🚨 EMERGENCY STOP');
     try {
       await invoke('emergency');
       droneStore.setFlying(false);
@@ -190,9 +180,7 @@
         upDown: z,
         yaw: yaw
       });
-    } catch (error) {
-      // Silent fail for RC commands
-    }
+    } catch (error) {}
   }
   
   async function moveWithHold(x: number, y: number, z: number, yaw: number, duration: number = 500) {
@@ -201,16 +189,14 @@
     await sendRC(0, 0, 0, 0);
   }
   
-  // Movement functions
   function nudgeForward() { moveWithHold(0, speed, 0, 0); }
   function nudgeBack() { moveWithHold(0, -speed, 0, 0); }
   function nudgeLeft() { moveWithHold(-speed, 0, 0, 0); }
   function nudgeRight() { moveWithHold(speed, 0, 0, 0); }
   async function nudgeUp() { 
     try {
-      // Use 20cm move like Python app
       await invoke('send_command', { command: 'up 20' });
-      toast.info('Moving up 20cm');
+      toast.info('Up 20cm');
     } catch (e) {
       moveWithHold(0, 0, speed, 0);
     }
@@ -218,7 +204,7 @@
   async function nudgeDown() { 
     try {
       await invoke('send_command', { command: 'down 20' });
-      toast.info('Moving down 20cm');
+      toast.info('Down 20cm');
     } catch (e) {
       moveWithHold(0, 0, -speed, 0);
     }
@@ -230,189 +216,219 @@
 
 <Card>
   <CardHeader>
-    <CardTitle>Drone Control</CardTitle>
+    <CardTitle>Flight Control</CardTitle>
   </CardHeader>
   <CardContent>
     <div class="space-y-4">
-      <!-- Connection Controls -->
-      <div class="flex items-center justify-between">
-        <div class="text-sm" style="color: var(--color-text-muted)">
-          Status: 
-          <span style="color: {$droneStore.connected ? 'var(--color-success)' : 'var(--color-error)'}">
-            {$droneStore.connected ? 'Connected' : 'Disconnected'}
-          </span>
-        </div>
-        {#if $droneStore.connected}
-          <Button on:click={disconnect} variant="destructive" size="sm">
-            <Square class="mr-2 h-4 w-4" />
-            Disconnect
-          </Button>
-        {:else}
-          <Button on:click={connect} size="sm" disabled={connecting}>
-            <Play class="mr-2 h-4 w-4" />
-            {connecting ? 'Connecting...' : 'Connect'}
-          </Button>
-        {/if}
-      </div>
-
       {#if $batteryWarning}
-        <div class="flex items-center gap-2 p-2 rounded" style="background-color: var(--color-warning); color: white">
-          <AlertTriangle class="h-4 w-4" />
-          <span class="text-sm font-medium">Low Battery!</span>
+        <div class="flex items-center gap-2 p-3 rounded-lg" style="background-color: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3)">
+          <AlertTriangle class="h-4 w-4" style="color: #ef4444" />
+          <span class="text-sm font-medium" style="color: #ef4444">Low Battery - Land Soon!</span>
         </div>
       {/if}
 
       {#if $droneStore.connected}
-        <!-- Flight Controls -->
-        <div class="space-y-3">
-          <div class="flex items-center justify-center gap-2">
-            <Button 
-              on:click={takeoff} 
-              variant="default"
-              disabled={flying}
-              size="sm"
-            >
+        <!-- Main Flight Controls -->
+        <div class="flex items-center justify-center gap-2">
+          <Button 
+            on:click={takeoff} 
+            variant="default"
+            disabled={flying || takingOff}
+            size="sm"
+            style="min-width: 100px"
+          >
+            {#if takingOff}
+              <Loader2 class="mr-2 h-4 w-4 animate-spin" />
+              Taking Off...
+            {:else}
+              <Play class="mr-2 h-4 w-4" />
               Takeoff
-            </Button>
-            <Button 
-              on:click={land} 
-              variant="secondary"
-              disabled={!flying}
-              size="sm"
-            >
+            {/if}
+          </Button>
+          <Button 
+            on:click={land} 
+            variant="secondary"
+            disabled={!flying || landing}
+            size="sm"
+            style="min-width: 100px"
+          >
+            {#if landing}
+              <Loader2 class="mr-2 h-4 w-4 animate-spin" />
+              Landing...
+            {:else}
+              <Square class="mr-2 h-4 w-4" />
               Land
-            </Button>
-            <Button 
-              on:click={emergency} 
-              variant="destructive"
-              size="sm"
-            >
-              <AlertTriangle class="mr-1 h-3 w-3" />
-              STOP
-            </Button>
-          </div>
+            {/if}
+          </Button>
+          <Button 
+            on:click={emergency} 
+            variant="destructive"
+            size="sm"
+          >
+            <AlertTriangle class="mr-1 h-3 w-3" />
+            STOP
+          </Button>
+        </div>
 
-          <!-- Movement Controls Grid -->
-          <div class="grid grid-cols-3 gap-1">
-            <!-- Forward -->
-            <div class="col-start-2">
-              <Button 
+        <!-- Control Pads -->
+        <div class="grid grid-cols-3 gap-4 p-4 rounded-lg" style="background-color: var(--color-surface)">
+          <!-- Movement Pad -->
+          <div class="flex flex-col gap-1">
+            <p class="text-xs font-semibold mb-1 text-center" style="color: var(--color-text-muted)">MOVE</p>
+            <div class="grid grid-cols-3 gap-1">
+              <div></div>
+              <button 
                 on:click={nudgeForward} 
-                variant="outline" 
-                class="w-full h-10"
                 disabled={!flying}
-                size="sm"
+                class="control-btn"
               >
                 <ChevronUp class="h-5 w-5" />
-              </Button>
-            </div>
-            
-            <!-- Left, Stop, Right -->
-            <Button 
-              on:click={nudgeLeft} 
-              variant="outline" 
-              class="w-full h-10"
-              disabled={!flying}
-              size="sm"
-            >
-              <ChevronLeft class="h-5 w-5" />
-            </Button>
-            <Button 
-              on:click={stopMovement} 
-              variant="outline" 
-              class="w-full h-10"
-              disabled={!flying}
-              size="sm"
-            >
-              ■
-            </Button>
-            <Button 
-              on:click={nudgeRight} 
-              variant="outline" 
-              class="w-full h-10"
-              disabled={!flying}
-              size="sm"
-            >
-              <ChevronRight class="h-5 w-5" />
-            </Button>
-            
-            <!-- Back -->
-            <div class="col-start-2">
-              <Button 
-                on:click={nudgeBack} 
-                variant="outline" 
-                class="w-full h-10"
+              </button>
+              <div></div>
+              
+              <button 
+                on:click={nudgeLeft} 
                 disabled={!flying}
-                size="sm"
+                class="control-btn"
+              >
+                <ChevronLeft class="h-5 w-5" />
+              </button>
+              <button 
+                on:click={stopMovement} 
+                disabled={!flying}
+                class="control-btn stop"
+              >
+                ■
+              </button>
+              <button 
+                on:click={nudgeRight} 
+                disabled={!flying}
+                class="control-btn"
+              >
+                <ChevronRight class="h-5 w-5" />
+              </button>
+              
+              <div></div>
+              <button 
+                on:click={nudgeBack} 
+                disabled={!flying}
+                class="control-btn"
               >
                 <ChevronDown class="h-5 w-5" />
-              </Button>
+              </button>
+              <div></div>
             </div>
           </div>
 
-          <!-- Altitude & Rotation -->
-          <div class="grid grid-cols-2 gap-2">
-            <div class="space-y-1">
-              <p class="text-xs font-medium text-center" style="color: var(--color-text-muted)">Altitude</p>
-              <Button 
-                on:click={nudgeUp} 
-                variant="outline"
-                disabled={!flying}
-                class="w-full"
-                size="sm"
-              >
-                <MoveUp class="mr-1 h-3 w-3" />
-                Up 20cm
-              </Button>
-              <Button 
-                on:click={nudgeDown} 
-                variant="outline"
-                disabled={!flying}
-                class="w-full"
-                size="sm"
-              >
-                <MoveDown class="mr-1 h-3 w-3" />
-                Down 20cm
-              </Button>
-            </div>
-            
-            <div class="space-y-1">
-              <p class="text-xs font-medium text-center" style="color: var(--color-text-muted)">Rotation</p>
-              <Button 
-                on:click={rotateLeft} 
-                variant="outline"
-                disabled={!flying}
-                class="w-full"
-                size="sm"
-              >
-                <RotateCcw class="mr-1 h-3 w-3" />
-                Left
-              </Button>
-              <Button 
-                on:click={rotateRight} 
-                variant="outline"
-                disabled={!flying}
-                class="w-full"
-                size="sm"
-              >
-                <RotateCw class="mr-1 h-3 w-3" />
-                Right
-              </Button>
-            </div>
+          <!-- Altitude Pad -->
+          <div class="flex flex-col items-center gap-1">
+            <p class="text-xs font-semibold mb-1" style="color: var(--color-text-muted)">ALTITUDE</p>
+            <button 
+              on:click={nudgeUp} 
+              disabled={!flying}
+              class="control-btn vertical"
+            >
+              <MoveUp class="h-5 w-5" />
+            </button>
+            <div class="text-xs font-mono" style="color: var(--color-text-muted); padding: 8px 0">20cm</div>
+            <button 
+              on:click={nudgeDown} 
+              disabled={!flying}
+              class="control-btn vertical"
+            >
+              <MoveDown class="h-5 w-5" />
+            </button>
           </div>
 
-          <!-- Keyboard Hints -->
-          <div class="text-xs p-2 rounded" style="background-color: var(--color-surface); color: var(--color-text-muted)">
-            <p class="font-semibold mb-1">Keyboard Controls:</p>
-            <p>W/S: Forward/Back | A/D: Left/Right</p>
-            <p>Q/E: Up/Down | ←/→: Rotate | SPACE: Emergency Stop</p>
+          <!-- Rotation Pad -->
+          <div class="flex flex-col items-center gap-1">
+            <p class="text-xs font-semibold mb-1" style="color: var(--color-text-muted)">ROTATE</p>
+            <button 
+              on:click={rotateLeft} 
+              disabled={!flying}
+              class="control-btn vertical"
+            >
+              <RotateCcw class="h-5 w-5" />
+            </button>
+            <div class="text-xs font-mono" style="color: var(--color-text-muted); padding: 8px 0">YAW</div>
+            <button 
+              on:click={rotateRight} 
+              disabled={!flying}
+              class="control-btn vertical"
+            >
+              <RotateCw class="h-5 w-5" />
+            </button>
           </div>
         </div>
+
+        <!-- Keyboard Hint -->
+        <div class="text-xs p-2 rounded text-center" style="background-color: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-border)">
+          <p class="font-semibold mb-1">⌨️ Keyboard: WASD/Arrows • Q/E: Alt • Space: Emergency</p>
+        </div>
       {:else}
-        <div class="text-center py-6" style="color: var(--color-text-muted)">
-          <p>Connect to drone to access controls</p>
+        <div class="text-center py-8">
+          <p class="text-sm mb-4" style="color: var(--color-text-muted)">Connect to drone to access controls</p>
+          <Button on:click={connect} size="lg" disabled={connecting}>
+            {#if connecting}
+              <Loader2 class="mr-2 h-5 w-5 animate-spin" />
+              Connecting...
+            {:else}
+              <Play class="mr-2 h-5 w-5" />
+              Connect
+            {/if}
+          </Button>
         </div>
       {/if}
     </div>
   </CardContent>
 </Card>
+
+<style>
+  .control-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    border-radius: 8px;
+    border: 2px solid var(--color-border);
+    background: transparent;
+    color: var(--color-text);
+    cursor: pointer;
+    transition: all 0.2s;
+    aspect-ratio: 1;
+  }
+
+  .control-btn:not(:disabled):hover {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+    color: white;
+    transform: scale(1.05);
+  }
+
+  .control-btn:not(:disabled):active {
+    transform: scale(0.95);
+  }
+
+  .control-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  .control-btn.stop {
+    font-size: 24px;
+    font-weight: bold;
+  }
+
+  .control-btn.vertical {
+    width: 80px;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .animate-spin {
+    animation: spin 1s linear infinite;
+  }
+</style>

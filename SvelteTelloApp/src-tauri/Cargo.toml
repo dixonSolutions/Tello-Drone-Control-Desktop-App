@@ -19,6 +19,7 @@ base64 = "0.21"
 anyhow = "1.0"
 thiserror = "1.0"
 bytes = "1.5"
+dirs = "5.0"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

@@ -7,7 +7,7 @@
   let interval: number;
   
   onMount(() => {
-    // Update telemetry every 2 seconds
+    // Update telemetry every 5 seconds - also serves as connection health check
     interval = setInterval(async () => {
       if ($droneStore.connected) {
         try {
@@ -17,10 +17,14 @@
           droneStore.setHeight(telemetry.height);
           droneStore.setAttitude(telemetry.pitch, telemetry.roll, telemetry.yaw);
         } catch (error) {
-          console.error('Telemetry update failed:', error);
+          console.error('Telemetry failed - drone disconnected:', error);
+          // Failed to retrieve battery/telemetry = drone is not connected
+          droneStore.setConnected(false);
+          droneStore.setFlying(false);
+          droneStore.setVideoActive(false);
         }
       }
-    }, 2000);
+    }, 5000); // 5 seconds like Python app
   });
   
   onDestroy(() => {

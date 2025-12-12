@@ -27,30 +27,23 @@ function createThemeStore() {
   
   const themeName = migrateThemeName(savedTheme);
   
-  console.log('[Theme] Migrated saved theme:', savedTheme, '->', themeName);
-  
   const { subscribe, set, update } = writable<Theme>(themes[themeName]);
 
   return {
     subscribe,
     setTheme: (themeName: ThemeName) => {
-      console.log('[Theme] Switching to:', themeName);
       const theme = themes[themeName];
       set(theme);
       applyTheme(theme);
       if (typeof window !== 'undefined') {
         localStorage.setItem('theme', themeName);
-        console.log('[Theme] Saved theme to localStorage:', themeName);
       }
     },
     init: () => {
-      console.log('[Theme] Initializing theme system...');
       const theme = themes[themeName];
       if (theme) {
         applyTheme(theme);
-        console.log('[Theme] Applied theme:', themeName);
       } else {
-        console.error('[Theme] Theme not found:', themeName, 'using default');
         const defaultTheme = themes['dark-blue'];
         applyTheme(defaultTheme);
       }

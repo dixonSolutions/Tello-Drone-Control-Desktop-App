@@ -10,23 +10,18 @@
   let connecting = false;
   
   onMount(() => {
-    console.log('[ReconnectScreen] Component mounted');
-    
     // Show popup whenever not connected
     droneStore.subscribe($drone => {
       showPopup = !$drone.connected;
-      console.log('[ReconnectScreen] Connection state:', $drone.connected, 'Show popup:', showPopup);
     });
   });
   
   async function attemptConnect() {
-    console.log('[ReconnectScreen] Attempting to connect...');
     connecting = true;
     connectionStore.setStatus('connecting', 'Connecting...');
     
     try {
       const result: any = await invoke('connect_drone');
-      console.log('[ReconnectScreen] Connect result:', result);
       
       if (result.success) {
         droneStore.setConnected(true);

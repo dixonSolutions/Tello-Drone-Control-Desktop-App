@@ -7,8 +7,6 @@
   let loadingMessage = 'Initializing...';
   
   onMount(async () => {
-    console.log('[LoadingScreen] Starting initialization...');
-    
     loadingMessage = 'Loading theme system...';
     await new Promise(r => setTimeout(r, 300));
     
@@ -19,7 +17,6 @@
     await new Promise(r => setTimeout(r, 200));
     
     loading = false;
-    console.log('[LoadingScreen] Initialization complete');
   });
 </script>
 

@@ -1,11 +1,14 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod video_capture;
+
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::net::UdpSocket;
 use std::time::Duration;
 use tauri::{State, Manager};
+use video_capture::TelloVideoCapture;
 
 // Drone state structures
 #[derive(Default, Clone, Serialize, Deserialize)]
@@ -27,11 +30,11 @@ struct AppState {
     drone: Arc<Mutex<DroneState>>,
     command_socket: Arc<Mutex<Option<UdpSocket>>>,
     state_socket: Arc<Mutex<Option<UdpSocket>>>,
-    video_socket: Arc<Mutex<Option<UdpSocket>>>,
+    video_capture: Arc<Mutex<Option<TelloVideoCapture>>>,
 }
 
 // Command/Response types
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct CommandResult {
     success: bool,
     message: String,
@@ -87,38 +90,103 @@ struct BoundingBox {
 
 #[tauri::command]
 async fn connect_drone(state: State<'_, AppState>) -> Result<CommandResult, String> {
-    let socket = UdpSocket::bind("0.0.0.0:8889")
-        .map_err(|e| format!("Failed to bind socket: {}", e))?;
+    // Check network configuration first
+    println!("[Connect] 🌐 Checking network configuration...");
+    match std::process::Command::new("ipconfig").output() {
+        Ok(output) => {
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            if !output_str.contains("192.168.10.") {
+                eprintln!("[Connect] ⚠️  WARNING: Not connected to Tello WiFi network!");
+                eprintln!("[Connect] 💡 Please connect to TELLO-XXXXXX WiFi first");
+                eprintln!("[Connect] 💡 Your IP should be 192.168.10.x, not 192.168.1.x");
+                return Err("Not connected to Tello WiFi network. Please connect to TELLO-XXXXXX WiFi and try again.".to_string());
+            } else {
+                println!("[Connect] ✅ Detected Tello network (192.168.10.x)");
+            }
+        }
+        Err(_) => {
+            println!("[Connect] ⚠️  Could not verify network - proceeding anyway");
+        }
+    }
+    
+    // First, clear any existing socket
+    *state.command_socket.lock().unwrap() = None;
+    
+    // Small delay to ensure socket is released
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    
+    println!("[Connect] Creating new UDP socket on 0.0.0.0:8889...");
+    
+    let socket = match UdpSocket::bind("0.0.0.0:8889") {
+        Ok(s) => {
+            println!("[Connect] ✅ Socket bound successfully");
+            s
+        }
+        Err(e) => {
+            eprintln!("[Connect] ❌ Failed to bind socket: {}", e);
+            return Err(format!("Failed to bind socket: {}. Port 8889 may be in use. Close other Tello apps and try again.", e));
+        }
+    };
     
     socket.set_read_timeout(Some(Duration::from_secs(5)))
         .map_err(|e| format!("Failed to set timeout: {}", e))?;
     
-    // Send command mode
-    socket.send_to(b"command", "192.168.10.1:8889")
-        .map_err(|e| format!("Failed to send command: {}", e))?;
+    println!("[Connect] Sending 'command' to 192.168.10.1:8889...");
     
-    // Wait for response
-    let mut buf = [0u8; 1024];
-    match socket.recv_from(&mut buf) {
-        Ok((size, _)) => {
-            let response = String::from_utf8_lossy(&buf[..size]);
-            if response.trim() == "ok" {
-                *state.command_socket.lock().unwrap() = Some(socket);
-                
-                let mut drone = state.drone.lock().unwrap();
-                drone.connected = true;
-                drone.speed = 50;
-                
-                Ok(CommandResult {
-                    success: true,
-                    message: "Connected to drone".to_string(),
-                })
-            } else {
-                Err(format!("Unexpected response: {}", response))
+    // Send command mode with retries
+    for attempt in 1..=3 {
+        match socket.send_to(b"command", "192.168.10.1:8889") {
+            Ok(bytes) => {
+                println!("[Connect] Attempt {}: Sent {} bytes", attempt, bytes);
+            }
+            Err(e) => {
+                eprintln!("[Connect] ❌ Send error: {}", e);
+                return Err(format!("Failed to send command: {}", e));
             }
         }
-        Err(e) => Err(format!("Connection timeout: {}", e)),
+        
+        // Wait for response
+        let mut buf = [0u8; 1024];
+        match socket.recv_from(&mut buf) {
+            Ok((size, addr)) => {
+                let response = String::from_utf8_lossy(&buf[..size]);
+                let trimmed = response.trim();
+                
+                println!("[Connect] Received from {}: '{}' ({} bytes)", addr, trimmed, size);
+                
+                // Accept "ok" or "OK" as valid response
+                if trimmed.eq_ignore_ascii_case("ok") {
+                    *state.command_socket.lock().unwrap() = Some(socket);
+                    
+                    let mut drone = state.drone.lock().unwrap();
+                    drone.connected = true;
+                    drone.speed = 50;
+                    
+                    println!("[Connect] ✅ Successfully connected!");
+                    
+                    return Ok(CommandResult {
+                        success: true,
+                        message: "Connected to drone".to_string(),
+                    });
+                } else {
+                    println!("[Connect] ⚠️ Unexpected response: '{}', retrying...", trimmed);
+                    if attempt < 3 {
+                        tokio::time::sleep(Duration::from_millis(300)).await;
+                    }
+                }
+            }
+            Err(e) => {
+                println!("[Connect] ⚠️ Attempt {} timeout: {}", attempt, e);
+                if attempt < 3 {
+                    tokio::time::sleep(Duration::from_millis(300)).await;
+                } else {
+                    return Err(format!("No response from drone after {} attempts. Make sure:\n1. Drone is powered on\n2. You're connected to TELLO-XXXXXX WiFi\n3. No other apps are using the drone", attempt));
+                }
+            }
+        }
     }
+    
+    Err("Failed to get valid response from drone. Check WiFi connection.".to_string())
 }
 
 #[tauri::command]
@@ -136,7 +204,7 @@ async fn disconnect_drone(state: State<'_, AppState>) -> Result<CommandResult, S
     
     *state.command_socket.lock().unwrap() = None;
     *state.state_socket.lock().unwrap() = None;
-    *state.video_socket.lock().unwrap() = None;
+    *state.video_capture.lock().unwrap() = None;
     
     let mut drone = state.drone.lock().unwrap();
     drone.connected = false;
@@ -309,72 +377,94 @@ async fn get_telemetry(state: State<'_, AppState>) -> Result<TelemetryData, Stri
 
 #[tauri::command]
 async fn start_video_stream(state: State<'_, AppState>, app_handle: tauri::AppHandle) -> Result<CommandResult, String> {
+    println!("[VideoStream] 🎥 Starting video stream...");
+    
     // Send streamon command
+    println!("[VideoStream] 📡 Sending 'streamon' command to drone...");
     let result = send_command(state.clone(), "streamon".to_string()).await?;
     
+    println!("[VideoStream] ✅ streamon response: {:?}", result);
+    
     if result.success {
-        // Start video receiver thread
-        start_video_receiver(app_handle);
+        println!("[VideoStream] 🚀 Starting video capture...");
+        
+        // Create and start video capture (like Python's TelloVideo)
+        let mut capture = TelloVideoCapture::new();
+        capture.start();
+        
+        // Store capture in state
+        *state.video_capture.lock().unwrap() = Some(capture);
+        
+        // Start frame polling thread (like Python's update_frame loop)
+        let video_capture = Arc::clone(&state.video_capture);
+        std::thread::spawn(move || {
+            println!("[PacketForwarder] 🔄 Starting H.264 packet forwarding at 30fps...");
+            let mut packet_num = 0;
+            let mut no_packet_count = 0;
+            
+            loop {
+                std::thread::sleep(Duration::from_millis(33)); // ~30fps
+                
+                let packet_data = {
+                    let capture_lock = video_capture.lock().unwrap();
+                    if let Some(ref capture) = *capture_lock {
+                        capture.get_packet()
+                    } else {
+                        println!("[PacketForwarder] ⚠️ Capture is None, stopping...");
+                        break; // Capture stopped
+                    }
+                };
+                
+                if let Some(h264_bytes) = packet_data {
+                    if packet_num == 0 {
+                        println!("[PacketForwarder] 🎉 First packet ready! ({} bytes)", h264_bytes.len());
+                        println!("[PacketForwarder] 📦 First 16 bytes: {:02x?}", &h264_bytes[..16.min(h264_bytes.len())]);
+                    }
+                    
+                    packet_num += 1;
+                    no_packet_count = 0;
+                    
+                    // Encode to base64 and emit as raw H.264
+                    use base64::{Engine as _, engine::general_purpose};
+                    let encoded = general_purpose::STANDARD.encode(&h264_bytes);
+                    
+                    if let Err(e) = app_handle.emit_all("video-packet", encoded) {
+                        eprintln!("[PacketForwarder] ❌ Failed to emit packet: {}", e);
+                    }
+                    
+                    if packet_num % 30 == 0 {
+                        println!("[PacketForwarder] 📊 {} packets forwarded", packet_num);
+                    }
+                } else {
+                    no_packet_count += 1;
+                    if no_packet_count == 1 {
+                        println!("[PacketForwarder] ⏳ Waiting for first packet from UDP receiver...");
+                    } else if no_packet_count % 30 == 0 {
+                        println!("[PacketForwarder] ⚠️ Still no packets after {} checks (~{} seconds)", 
+                                 no_packet_count, no_packet_count / 30);
+                    }
+                }
+            }
+            
+            println!("[PacketForwarder] 🛑 Packet forwarding stopped");
+        });
+        
+        println!("[VideoStream] ✅ Video capture and polling started");
+    } else {
+        println!("[VideoStream] ❌ streamon command failed: {}", result.message);
     }
     
     Ok(result)
 }
 
-fn start_video_receiver(app_handle: tauri::AppHandle) {
-    std::thread::spawn(move || {
-        println!("[VideoReceiver] Starting video receiver on port 11111...");
-        
-        // Try to bind with SO_REUSEADDR
-        match UdpSocket::bind("0.0.0.0:11111") {
-            Ok(socket) => {
-                // Set non-blocking with reasonable timeout
-                socket.set_read_timeout(Some(Duration::from_millis(100))).ok();
-                let mut buf = vec![0u8; 4096]; // Larger buffer for video packets
-                let mut frame_count = 0;
-                
-                println!("[VideoReceiver] ✅ Video receiver started successfully on 0.0.0.0:11111");
-                
-                loop {
-                    match socket.recv(&mut buf) {
-                        Ok(size) => {
-                            frame_count += 1;
-                            
-                            if frame_count % 30 == 0 {
-                                println!("[VideoReceiver] Received {} video packets (latest: {} bytes)", frame_count, size);
-                            }
-                            
-                            // Encode packet to base64 and emit to frontend
-                            use base64::{Engine as _, engine::general_purpose};
-                            let encoded = general_purpose::STANDARD.encode(&buf[..size]);
-                            
-                            if let Err(e) = app_handle.emit_all("video-packet", encoded) {
-                                eprintln!("[VideoReceiver] Failed to emit packet: {}", e);
-                            }
-                        }
-                        Err(e) => {
-                            if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut {
-                                // Normal timeout, continue
-                                continue;
-                            } else {
-                                eprintln!("[VideoReceiver] Error receiving video: {}", e);
-                                break;
-                            }
-                        }
-                    }
-                }
-                
-                println!("[VideoReceiver] Video receiver stopped");
-            }
-            Err(e) => {
-                eprintln!("[VideoReceiver] ❌ Failed to bind video socket on port 11111: {}", e);
-                eprintln!("[VideoReceiver] Port may be in use. Try closing other Tello apps.");
-            }
-        }
-    });
-}
-
 #[tauri::command]
 async fn stop_video_stream(state: State<'_, AppState>) -> Result<CommandResult, String> {
+    println!("[VideoStream] 🛑 Stopping video stream...");
+    
+    // Stop video capture (this will trigger Drop, cleaning up thread)
+    *state.video_capture.lock().unwrap() = None;
+    
+    // Send streamoff command
     send_command(state, "streamoff".to_string()).await
 }
 
@@ -430,6 +520,51 @@ async fn stop_face_recognition() -> Result<CommandResult, String> {
     })
 }
 
+#[tauri::command]
+async fn open_images_folder() -> Result<CommandResult, String> {
+    use std::process::Command;
+    
+    // Get the standard pictures directory
+    let pictures_dir = dirs::picture_dir()
+        .ok_or("Could not find pictures directory")?;
+    
+    let tello_dir = pictures_dir.join("Tello");
+    
+    // Create directory if it doesn't exist
+    std::fs::create_dir_all(&tello_dir)
+        .map_err(|e| format!("Failed to create directory: {}", e))?;
+    
+    // Open folder with system default file manager
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg(&tello_dir)
+            .spawn()
+            .map_err(|e| format!("Failed to open folder: {}", e))?;
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(&tello_dir)
+            .spawn()
+            .map_err(|e| format!("Failed to open folder: {}", e))?;
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg(&tello_dir)
+            .spawn()
+            .map_err(|e| format!("Failed to open folder: {}", e))?;
+    }
+    
+    Ok(CommandResult {
+        success: true,
+        message: format!("Opened folder: {:?}", tello_dir),
+    })
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(AppState::default())
@@ -454,6 +589,7 @@ fn main() {
             delete_face_model,
             start_face_recognition,
             stop_face_recognition,
+            open_images_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
